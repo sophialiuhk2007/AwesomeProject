@@ -10,8 +10,12 @@
     "test": "jest"
   },
   "dependencies": {
+    "@credo-ts/core": "^0.5.15",
+    "@credo-ts/react-native": "^0.5.15",
     "react": "19.0.0",
-    "react-native": "0.79.2"
+    "react-native": "0.79.2",
+    "react-native-fs": "^2.20.0",
+    "react-native-get-random-values": "^1.11.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

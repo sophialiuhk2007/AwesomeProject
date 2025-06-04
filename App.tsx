@@ -23,6 +23,11 @@ import {
   LearnMoreLinks,
   ReloadInstructions,
 } from 'react-native/Libraries/NewAppScreen';
+import type {InitConfig} from '@credo-ts/core';
+import {Agent} from '@credo-ts/core';
+import {agentDependencies} from '@credo-ts/react-native';
+import {AskarModule} from '@credo-ts/askar';
+import {ariesAskar} from '@hyperledger/aries-askar-react-native';
 
 type SectionProps = PropsWithChildren<{
   title: string;
@@ -57,19 +62,43 @@ function Section({children, title}: SectionProps): React.JSX.Element {
 function App(): React.JSX.Element {
   const isDarkMode = useColorScheme() === 'dark';
 
+  React.useEffect(() => {
+    const config: InitConfig = {
+      label: 'docs-agent-react-native',
+      walletConfig: {
+        id: 'wallet-id',
+        key: 'testkey0000000000000000000000000',
+      },
+    };
+
+    const agent = new Agent({
+      config,
+      dependencies: agentDependencies,
+      modules: {
+        // Register the Askar module on the agent
+        askar: new AskarModule({
+          ariesAskar,
+        }),
+      },
+    });
+    agent
+      .initialize()
+      .then(() => {
+        console.log('Agent initialized!');
+      })
+      .catch(e => {
+        console.error(
+          `Something went wrong while setting up the agent! Message: ${e}`,
+        );
+      });
+
+    // Optionally, do something with `agent` here
+  }, []);
+
   const backgroundStyle = {
     backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
   };
 
-  /*
-   * To keep the template simple and small we're adding padding to prevent view
-   * from rendering under the System UI.
-   * For bigger apps the recommendation is to use `react-native-safe-area-context`:
-   * https://github.com/AppAndFlow/react-native-safe-area-context
-   *
-   * You can read more about it here:
-   * https://github.com/react-native-community/discussions-and-proposals/discussions/827
-   */
   const safePadding = '5%';
 
   return (
@@ -107,7 +136,6 @@ function App(): React.JSX.Element {
     </View>
   );
 }
-
 const styles = StyleSheet.create({
   sectionContainer: {
     marginTop: 32,
