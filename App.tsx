@@ -126,7 +126,7 @@ function App(): React.JSX.Element {
   React.useEffect(() => {
     const processCredentialOffer = async () => {
       if (credentialOffer && agentRef.current) {
-        console.log('Credential Offer2:', credentialOffer);
+        console.log('Credential Offer:', credentialOffer);
         const resolvedCredentialOffer =
           await agentRef.current.modules.openId4VcHolderModule.resolveCredentialOffer(
             credentialOffer,
