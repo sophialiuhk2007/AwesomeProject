@@ -5,13 +5,14 @@
  * @format
  */
 
-import React from 'react';
+import React, {useState} from 'react';
 import type {PropsWithChildren} from 'react';
 import {
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   useColorScheme,
   View,
 } from 'react-native';
@@ -24,10 +25,16 @@ import {
   ReloadInstructions,
 } from 'react-native/Libraries/NewAppScreen';
 import type {InitConfig} from '@credo-ts/core';
-import {Agent} from '@credo-ts/core';
+import {
+  Agent,
+  KeyDidCreateOptions,
+  getJwkFromKey,
+  DidKey,
+} from '@credo-ts/core';
 import {agentDependencies} from '@credo-ts/react-native';
 import {AskarModule} from '@credo-ts/askar';
 import {ariesAskar} from '@hyperledger/aries-askar-react-native';
+import {OpenId4VcHolderModule} from '@credo-ts/openid4vc';
 
 type SectionProps = PropsWithChildren<{
   title: string;
@@ -61,6 +68,8 @@ function Section({children, title}: SectionProps): React.JSX.Element {
 
 function App(): React.JSX.Element {
   const isDarkMode = useColorScheme() === 'dark';
+  const [credentialOffer, setCredentialOffer] = useState('');
+  const [inputValue, setInputValue] = useState('');
 
   React.useEffect(() => {
     const config: InitConfig = {
@@ -75,10 +84,10 @@ function App(): React.JSX.Element {
       config,
       dependencies: agentDependencies,
       modules: {
-        // Register the Askar module on the agent
         askar: new AskarModule({
           ariesAskar,
         }),
+        openId4VcHolderModule: new OpenId4VcHolderModule(),
       },
     });
     agent
@@ -91,15 +100,24 @@ function App(): React.JSX.Element {
           `Something went wrong while setting up the agent! Message: ${e}`,
         );
       });
-
-    // Optionally, do something with `agent` here
   }, []);
+
+  React.useEffect(() => {
+    if (credentialOffer) {
+      console.log('Credential Offer:', credentialOffer);
+    }
+  }, [credentialOffer]);
 
   const backgroundStyle = {
     backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
   };
 
   const safePadding = '5%';
+
+  const handleInputSubmit = () => {
+    setCredentialOffer(inputValue);
+    setInputValue('');
+  };
 
   return (
     <View style={backgroundStyle}>
@@ -117,9 +135,34 @@ function App(): React.JSX.Element {
             paddingHorizontal: safePadding,
             paddingBottom: safePadding,
           }}>
+          <Section title="Credential Offer Input">
+            <TextInput
+              style={{
+                borderColor: '#888',
+                borderWidth: 1,
+                padding: 8,
+                marginBottom: 8,
+                color: isDarkMode ? Colors.white : Colors.black,
+              }}
+              placeholder="Enter credential offer"
+              placeholderTextColor={isDarkMode ? '#ccc' : '#888'}
+              value={inputValue}
+              onChangeText={setInputValue}
+              onSubmitEditing={handleInputSubmit}
+              returnKeyType="done"
+            />
+            <Text>Current credentialOffer: {credentialOffer}</Text>
+            <Text
+              style={{
+                color: '#007AFF',
+                marginTop: 8,
+              }}
+              onPress={handleInputSubmit}>
+              Submit
+            </Text>
+          </Section>
           <Section title="Step One">
-            Rewrite <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
+            Initializing <Text style={styles.highlight}>holder</Text> agent.
           </Section>
           <Section title="See Your Changes">
             <ReloadInstructions />
