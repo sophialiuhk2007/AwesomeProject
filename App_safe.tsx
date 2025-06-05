@@ -15,9 +15,6 @@ import {
   TextInput,
   useColorScheme,
   View,
-  SafeAreaView,
-  TouchableOpacity,
-  Dimensions,
 } from 'react-native';
 
 import {
@@ -55,25 +52,38 @@ if (typeof global.TextEncoder === 'undefined') {
   global.TextEncoder = TextEncoder;
 }
 
-// Constants for the theme
-const THEME = {
-  primary: '#6C5CE7',
-  secondary: '#A8A4FF',
-  background: '#F8F9FE',
-  darkBackground: '#1A1B2F',
-  text: '#2D3436',
-  darkText: '#F8F9FE',
-  card: '#FFFFFF',
-  darkCard: '#252644',
-  accent: '#00B894',
-};
+type SectionProps = PropsWithChildren<{
+  title: string;
+}>;
 
-// Add simple tab navigation state
-type Tab = 'Credentials' | 'Verification';
+function Section({children, title}: SectionProps): React.JSX.Element {
+  const isDarkMode = useColorScheme() === 'dark';
+  return (
+    <View style={styles.sectionContainer}>
+      <Text
+        style={[
+          styles.sectionTitle,
+          {
+            color: isDarkMode ? Colors.white : Colors.black,
+          },
+        ]}>
+        {title}
+      </Text>
+      <Text
+        style={[
+          styles.sectionDescription,
+          {
+            color: isDarkMode ? Colors.light : Colors.dark,
+          },
+        ]}>
+        {children}
+      </Text>
+    </View>
+  );
+}
 
 function App(): React.JSX.Element {
   const isDarkMode = useColorScheme() === 'dark';
-  const [tab, setTab] = useState<Tab>('Credentials');
   const [credentialOffer, setCredentialOffer] = useState('');
   const [inputValue, setInputValue] = useState('');
   const [authorizationRequest, setAuthorizationRequest] = useState('');
@@ -281,11 +291,10 @@ function App(): React.JSX.Element {
   }, [authorizationRequest]);
 
   const backgroundStyle = {
-    flex: 1,
     backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
   };
 
-  const safePadding = 20;
+  const safePadding = '5%';
 
   const handleInputSubmit = () => {
     setCredentialOffer(inputValue);
@@ -296,230 +305,96 @@ function App(): React.JSX.Element {
     setAuthorizationRequest(authInputValue);
     setAuthInputValue('');
   };
-
-  // Tab button component
-  const TabButton = ({
-    label,
-    selected,
-    onPress,
-  }: {
-    label: string;
-    selected: boolean;
-    onPress: () => void;
-  }) => (
-    <TouchableOpacity
-      onPress={onPress}
-      style={{
-        flex: 1,
-        paddingVertical: 16,
-        backgroundColor: selected
-          ? isDarkMode
-            ? THEME.darkCard
-            : THEME.card
-          : 'transparent',
-        borderBottomWidth: 3,
-        borderBottomColor: selected ? THEME.primary : 'transparent',
-        alignItems: 'center',
-        marginHorizontal: 8,
-        borderRadius: selected ? 12 : 0,
-      }}>
-      <Text
-        style={{
-          color: selected
-            ? THEME.primary
-            : isDarkMode
-            ? THEME.darkText
-            : THEME.text,
-          fontWeight: selected ? '700' : '500',
-          fontSize: 16,
-        }}>
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
-
   return (
-    <SafeAreaView
-      style={[
-        backgroundStyle,
-        {
-          backgroundColor: isDarkMode ? THEME.darkBackground : THEME.background,
-        },
-      ]}>
+    <View style={backgroundStyle}>
       <StatusBar
         barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={isDarkMode ? THEME.darkBackground : THEME.background}
+        backgroundColor={backgroundStyle.backgroundColor}
       />
-
-      <View style={styles.header}>
-        <Text
-          style={[
-            styles.headerTitle,
-            {
-              color: isDarkMode ? THEME.darkText : THEME.text,
-            },
-          ]}>
-          Digital Wallet
-        </Text>
-      </View>
-
-      <View style={styles.tabContainer}>
-        <TabButton
-          label="Credentials"
-          selected={tab === 'Credentials'}
-          onPress={() => setTab('Credentials')}
-        />
-        <TabButton
-          label="Verification"
-          selected={tab === 'Verification'}
-          onPress={() => setTab('Verification')}
-        />
-      </View>
-
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}>
+      <ScrollView style={backgroundStyle}>
+        <View style={{paddingRight: safePadding}}>
+          <Header />
+        </View>
         <View
-          style={[
-            styles.container,
-            {
-              backgroundColor: isDarkMode
-                ? THEME.darkBackground
-                : THEME.background,
-            },
-          ]}>
-          {tab === 'Credentials' ? (
-            <View
-              style={[
-                styles.card,
-                {
-                  backgroundColor: isDarkMode ? THEME.darkCard : THEME.card,
-                },
-              ]}>
-              <Text style={styles.cardTitle}>Add New Credential</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  {
-                    backgroundColor: isDarkMode ? '#1E1F3A' : '#F0F2F8',
-                    color: isDarkMode ? THEME.darkText : THEME.text,
-                  },
-                ]}
-                placeholder="Paste credential offer URL or scan QR code"
-                placeholderTextColor={isDarkMode ? '#6C7693' : '#8395A7'}
-                value={inputValue}
-                onChangeText={setInputValue}
-                multiline
-              />
-              <TouchableOpacity
-                style={styles.primaryButton}
-                onPress={handleInputSubmit}>
-                <Text style={styles.buttonText}>Accept Credential</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View
-              style={[
-                styles.card,
-                {
-                  backgroundColor: isDarkMode ? THEME.darkCard : THEME.card,
-                },
-              ]}>
-              <Text style={styles.cardTitle}>Verification Request</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  {
-                    backgroundColor: isDarkMode ? '#1E1F3A' : '#F0F2F8',
-                    color: isDarkMode ? THEME.darkText : THEME.text,
-                  },
-                ]}
-                placeholder="Paste verification request or scan QR code"
-                placeholderTextColor={isDarkMode ? '#6C7693' : '#8395A7'}
-                value={authInputValue}
-                onChangeText={setAuthInputValue}
-                multiline
-              />
-              <TouchableOpacity
-                style={styles.primaryButton}
-                onPress={handleAuthInputSubmit}>
-                <Text style={styles.buttonText}>Verify</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+          style={{
+            backgroundColor: isDarkMode ? Colors.black : Colors.white,
+            paddingHorizontal: safePadding,
+            paddingBottom: safePadding,
+          }}>
+          <Section title="Credential Offer Input">
+            <TextInput
+              style={{
+                borderColor: '#888',
+                borderWidth: 1,
+                padding: 8,
+                marginBottom: 8,
+                color: isDarkMode ? Colors.white : Colors.black,
+              }}
+              placeholder="Enter credential offer"
+              placeholderTextColor={isDarkMode ? '#ccc' : '#888'}
+              value={inputValue}
+              onChangeText={setInputValue}
+              onSubmitEditing={handleInputSubmit}
+              returnKeyType="done"
+            />
+            <Text>Current credentialOffer: {credentialOffer}</Text>
+            <Text
+              style={{
+                color: '#007AFF',
+                marginTop: 8,
+              }}
+              onPress={handleInputSubmit}>
+              Submit
+            </Text>
+          </Section>
+          <Section title="Authorization Request Input">
+            <TextInput
+              style={{
+                borderColor: '#888',
+                borderWidth: 1,
+                padding: 8,
+                marginBottom: 8,
+                color: isDarkMode ? Colors.white : Colors.black,
+              }}
+              placeholder="Enter authorization request"
+              placeholderTextColor={isDarkMode ? '#ccc' : '#888'}
+              value={authInputValue}
+              onChangeText={setAuthInputValue}
+              onSubmitEditing={handleAuthInputSubmit}
+              returnKeyType="done"
+            />
+            <Text>Current authorizationRequest: {authorizationRequest}</Text>
+            <Text
+              style={{
+                color: '#007AFF',
+                marginTop: 8,
+              }}
+              onPress={handleAuthInputSubmit}>
+              Submit
+            </Text>
+          </Section>
+          {/* ...rest of your sections... */}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
-
-// Replace the existing styles
 const styles = StyleSheet.create({
-  header: {
-    padding: 20,
-    paddingBottom: 10,
+  sectionContainer: {
+    marginTop: 32,
+    paddingHorizontal: 24,
   },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  container: {
-    flex: 1,
-    padding: 16,
-  },
-  scrollContent: {
-    flexGrow: 1,
-  },
-  card: {
-    borderRadius: 20,
-    padding: 24,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 5,
-  },
-  cardTitle: {
+  sectionTitle: {
     fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 20,
-    color: THEME.primary,
-  },
-  input: {
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    marginBottom: 20,
-    minHeight: 120,
-    textAlignVertical: 'top',
-  },
-  primaryButton: {
-    backgroundColor: THEME.primary,
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    shadowColor: THEME.primary,
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  buttonText: {
-    color: '#fff',
     fontWeight: '600',
-    fontSize: 16,
+  },
+  sectionDescription: {
+    marginTop: 8,
+    fontSize: 18,
+    fontWeight: '400',
+  },
+  highlight: {
+    fontWeight: '700',
   },
 });
 
