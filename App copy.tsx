@@ -58,19 +58,15 @@ if (typeof global.TextEncoder === 'undefined') {
 
 // Constants for the theme
 const THEME = {
-  primary: '#6366f1',
-  secondary: '#818cf8',
-  background: '#0f172a',
-  darkBackground: '#020617',
-  text: '#e2e8f0',
-  darkText: '#f8fafc',
-  card: '#1e293b',
-  darkCard: '#0f172a',
-  accent: '#22d3ee',
-  success: '#10b981',
-  warning: '#f59e0b',
-  error: '#ef4444',
-  gradient: ['#6366f1', '#818cf8'],
+  primary: '#6C5CE7',
+  secondary: '#A8A4FF',
+  background: '#F8F9FE',
+  darkBackground: '#1A1B2F',
+  text: '#2D3436',
+  darkText: '#F8F9FE',
+  card: '#FFFFFF',
+  darkCard: '#252644',
+  accent: '#00B894',
 };
 
 // Update Tab type to include new screen
@@ -621,7 +617,7 @@ function App(): React.JSX.Element {
                         style={[
                           styles.credentialType,
                           {
-                            color: THEME.accent,
+                            color: THEME.primary,
                           },
                         ]}>
                         {cred.type[0]}
@@ -630,7 +626,7 @@ function App(): React.JSX.Element {
                         style={[
                           styles.credentialIssuer,
                           {
-                            color: 'rgba(226, 232, 240, 0.7)',
+                            color: isDarkMode ? THEME.darkText : THEME.text,
                           },
                         ]}>
                         {cred.issuer}
@@ -660,7 +656,7 @@ function App(): React.JSX.Element {
                     style={[
                       styles.input,
                       {
-                        backgroundColor: 'rgba(15, 23, 42, 0.6)',
+                        backgroundColor: isDarkMode ? '#1E1F3A' : '#F0F2F8',
                         color: isDarkMode ? THEME.darkText : THEME.text,
                       },
                     ]}
@@ -689,7 +685,7 @@ function App(): React.JSX.Element {
                     style={[
                       styles.input,
                       {
-                        backgroundColor: 'rgba(15, 23, 42, 0.6)',
+                        backgroundColor: isDarkMode ? '#1E1F3A' : '#F0F2F8',
                         color: isDarkMode ? THEME.darkText : THEME.text,
                       },
                     ]}
@@ -721,11 +717,11 @@ function App(): React.JSX.Element {
             style={[
               styles.modalContent,
               {
-                backgroundColor: THEME.card,
+                backgroundColor: isDarkMode ? THEME.darkCard : THEME.card,
               },
             ]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, {color: THEME.accent}]}>
+              <Text style={[styles.modalTitle, {color: THEME.primary}]}>
                 Credential Details
               </Text>
               <TouchableOpacity
@@ -743,25 +739,82 @@ function App(): React.JSX.Element {
                       styles.detailLabel,
                       {color: isDarkMode ? THEME.darkText : THEME.text},
                     ]}>
+                    Type
+                  </Text>
+                  <Text style={[styles.detailValue, {color: THEME.primary}]}>
+                    {selectedCredential.type.join(', ')}
+                  </Text>
+                </View>
+
+                <View style={styles.detailSection}>
+                  <Text
+                    style={[
+                      styles.detailLabel,
+                      {color: isDarkMode ? THEME.darkText : THEME.text},
+                    ]}>
+                    Issuer
+                  </Text>
+                  <Text
+                    style={[
+                      styles.detailValue,
+                      {color: isDarkMode ? THEME.darkText : THEME.text},
+                    ]}>
+                    {selectedCredential.issuer}
+                  </Text>
+                </View>
+
+                {selectedCredential.issuanceDate && (
+                  <View style={styles.detailSection}>
+                    <Text
+                      style={[
+                        styles.detailLabel,
+                        {color: isDarkMode ? THEME.darkText : THEME.text},
+                      ]}>
+                      Issued
+                    </Text>
+                    <Text
+                      style={[
+                        styles.detailValue,
+                        {color: isDarkMode ? THEME.darkText : THEME.text},
+                      ]}>
+                      {new Date(
+                        selectedCredential.issuanceDate,
+                      ).toLocaleDateString()}
+                    </Text>
+                  </View>
+                )}
+
+                <View style={styles.detailSection}>
+                  <Text
+                    style={[
+                      styles.detailLabel,
+                      {color: isDarkMode ? THEME.darkText : THEME.text},
+                    ]}>
                     Claims
                   </Text>
-                  {selectedCredential &&
-                  selectedCredential.claims &&
-                  Object.keys(selectedCredential.claims).length > 0 ? (
+                  {Object.entries(selectedCredential.claims).length === 0 ? (
+                    <Text style={styles.detailValue}>No claims found</Text>
+                  ) : (
                     Object.entries(selectedCredential.claims).map(
                       ([key, value]) => (
                         <View key={key} style={styles.claim}>
-                          <Text style={styles.claimKey}>{key}:</Text>
-                          <Text style={styles.claimValue}>
-                            {typeof value === 'object'
-                              ? JSON.stringify(value, null, 2)
-                              : String(value)}
+                          <Text
+                            style={[
+                              styles.claimKey,
+                              {color: isDarkMode ? THEME.darkText : THEME.text},
+                            ]}>
+                            {key}:
+                          </Text>
+                          <Text
+                            style={[
+                              styles.claimValue,
+                              {color: isDarkMode ? THEME.darkText : THEME.text},
+                            ]}>
+                            {JSON.stringify(value)}
                           </Text>
                         </View>
                       ),
                     )
-                  ) : (
-                    <Text style={styles.detailValue}>No claims found</Text>
                   )}
                 </View>
               </ScrollView>
@@ -802,19 +855,17 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   card: {
-    borderRadius: 24,
+    borderRadius: 20,
     padding: 24,
     marginBottom: 16,
-    shadowColor: THEME.primary,
+    shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 8,
+      height: 4,
     },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.2)',
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
   },
   cardTitle: {
     fontSize: 24,
@@ -829,9 +880,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     minHeight: 120,
     textAlignVertical: 'top',
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.2)',
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
   },
   primaryButton: {
     backgroundColor: THEME.primary,
@@ -846,8 +894,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 5,
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.4)',
   },
   buttonText: {
     color: '#fff',
@@ -858,38 +904,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 16,
-    backgroundColor: 'rgba(99, 102, 241, 0.1)',
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.2)',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: '#F8F9FE',
+    marginBottom: 12,
   },
   credentialInfo: {
     flex: 1,
     marginRight: 12,
   },
   credentialType: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '600',
     marginBottom: 4,
-    color: THEME.accent,
   },
   credentialIssuer: {
     fontSize: 14,
-    color: 'rgba(226, 232, 240, 0.7)',
+    opacity: 0.7,
   },
   deleteButton: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    backgroundColor: '#FF4757',
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.4)',
   },
   deleteButtonText: {
-    color: '#ef4444',
+    color: '#FFF',
     fontSize: 14,
     fontWeight: '600',
   },
@@ -906,30 +947,30 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   modalContent: {
-    borderRadius: 24,
-    padding: 24,
-    maxHeight: '90%',
-    backgroundColor: THEME.card,
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.2)',
+    borderRadius: 20,
+    padding: 20,
+    maxHeight: '80%',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(99, 102, 241, 0.2)',
-    paddingBottom: 16,
+    marginBottom: 20,
   },
   modalTitle: {
     fontSize: 24,
     fontWeight: '700',
-    color: THEME.accent,
+  },
+  closeButton: {
+    padding: 8,
+  },
+  closeButtonText: {
+    fontSize: 20,
+    color: '#666',
+    fontWeight: '600',
   },
   modalBody: {
-    // flex: 1,
-    paddingBottom: 20,
+    flex: 1,
   },
   detailSection: {
     marginBottom: 20,
@@ -945,38 +986,18 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   claim: {
-    flexDirection: 'column',
-    backgroundColor: 'rgba(99, 102, 241, 0.1)',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.2)',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 8,
   },
   claimKey: {
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: 8,
-    color: THEME.accent,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    marginRight: 8,
   },
   claimValue: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: THEME.text,
-  },
-  closeButton: {
-    padding: 8,
-    borderRadius: 16,
-    backgroundColor: 'rgba(99, 102, 241, 0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeButtonText: {
-    fontSize: 22,
-    color: THEME.primary,
-    fontWeight: '700',
+    fontSize: 14,
+    flex: 1,
   },
 });
 
