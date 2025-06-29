@@ -6,7 +6,6 @@
  */
 
 import React, {useState, useRef} from 'react';
-import type {PropsWithChildren} from 'react';
 import {
   ScrollView,
   StatusBar,
@@ -19,15 +18,11 @@ import {
   TouchableOpacity,
   Dimensions,
   Modal,
+  Platform,
 } from 'react-native';
 
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
+import {Colors} from 'react-native/Libraries/NewAppScreen';
+import {THEME} from './theme';
 import type {InitConfig} from '@credo-ts/core';
 import {
   Agent,
@@ -47,6 +42,13 @@ import {
   OpenId4VciCredentialFormatProfile,
 } from '@credo-ts/openid4vc';
 import {TextEncoder, TextDecoder} from 'text-encoding';
+import PassKit, {AddPassButton} from 'react-native-passkit-wallet';
+import {Alert} from 'react-native';
+import {Buffer} from 'buffer';
+import axios from 'axios';
+import storage from '@react-native-firebase/storage';
+import {create} from 'domain';
+
 if (typeof global.TextDecoder === 'undefined') {
   // @ts-ignore
   global.TextDecoder = TextDecoder;
@@ -55,23 +57,6 @@ if (typeof global.TextEncoder === 'undefined') {
   // @ts-ignore
   global.TextEncoder = TextEncoder;
 }
-
-// Constants for the theme
-const THEME = {
-  primary: '#6366f1',
-  secondary: '#818cf8',
-  background: '#0f172a',
-  darkBackground: '#020617',
-  text: '#e2e8f0',
-  darkText: '#f8fafc',
-  card: '#1e293b',
-  darkCard: '#0f172a',
-  accent: '#22d3ee',
-  success: '#10b981',
-  warning: '#f59e0b',
-  error: '#ef4444',
-  gradient: ['#6366f1', '#818cf8'],
-};
 
 // Update Tab type to include new screen
 type Tab = 'Credentials' | 'Verification' | 'MyCredentials';
@@ -91,6 +76,7 @@ type DetailedCredentialItem = {
   issuanceDate?: string;
   expirationDate?: string;
   claims: Record<string, any>;
+  pkpassBase64?: string | null;
 };
 
 // Add simple tab navigation state
@@ -106,18 +92,14 @@ function App(): React.JSX.Element {
     useState<DetailedCredentialItem | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const agentRef = useRef<Agent | null>(null);
+  const [pkpassBase64, setPkpassBase64] = useState<string | null>(null);
+
   function base64UrlDecode(input: string) {
     // Replace URL-safe chars and pad with '='
     input = input.replace(/-/g, '+').replace(/_/g, '/');
     while (input.length % 4) input += '=';
-    return decodeURIComponent(
-      atob(input)
-        .split('')
-        .map(function (c) {
-          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-        })
-        .join(''),
-    );
+    const decoded = Buffer.from(input, 'base64').toString('utf-8');
+    return decoded;
   }
   React.useEffect(() => {
     const config: InitConfig = {
@@ -155,117 +137,138 @@ function App(): React.JSX.Element {
   React.useEffect(() => {
     const processCredentialOffer = async () => {
       if (credentialOffer && agentRef.current) {
-        console.log('Credential Offer:', credentialOffer);
-        const resolvedCredentialOffer =
-          await agentRef.current.modules.openId4VcHolderModule.resolveCredentialOffer(
-            credentialOffer,
+        try {
+          console.log('Credential Offer:', credentialOffer);
+          const resolvedCredentialOffer =
+            await agentRef.current.modules.openId4VcHolderModule.resolveCredentialOffer(
+              credentialOffer,
+            );
+          console.log(
+            'Resolved credential offer',
+            JSON.stringify(
+              resolvedCredentialOffer.credentialOfferPayload,
+              null,
+              2,
+            ),
           );
-        console.log(
-          'Resolved credential offer',
-          JSON.stringify(
-            resolvedCredentialOffer.credentialOfferPayload,
-            null,
-            2,
-          ),
-        );
 
-        const credentials =
-          await agentRef.current.modules.openId4VcHolderModule.acceptCredentialOfferUsingPreAuthorizedCode(
-            resolvedCredentialOffer,
-            {
-              credentialBindingResolver: async ({
-                supportedDidMethods,
-                keyType,
-                supportsAllDidMethods,
-                supportsJwk,
-                credentialFormat,
-              }: {
-                supportedDidMethods?: string[];
-                keyType: KeyType;
-                supportsAllDidMethods: boolean;
-                supportsJwk?: boolean;
-                credentialFormat: OpenId4VciCredentialFormatProfile;
-              }) => {
-                // NOTE: example implementation. Adjust based on your needs
-                // Return the binding to the credential that should be used. Either did or jwk is supported
+          const credentials =
+            await agentRef.current.modules.openId4VcHolderModule.acceptCredentialOfferUsingPreAuthorizedCode(
+              resolvedCredentialOffer,
+              {
+                credentialBindingResolver: async ({
+                  supportedDidMethods,
+                  keyType,
+                  supportsAllDidMethods,
+                  supportsJwk,
+                  credentialFormat,
+                }: {
+                  supportedDidMethods?: string[];
+                  keyType: KeyType;
+                  supportsAllDidMethods: boolean;
+                  supportsJwk?: boolean;
+                  credentialFormat: OpenId4VciCredentialFormatProfile;
+                }) => {
+                  // NOTE: example implementation. Adjust based on your needs
+                  // Return the binding to the credential that should be used. Either did or jwk is supported
 
-                if (
-                  supportsAllDidMethods ||
-                  supportedDidMethods?.includes('did:key')
-                ) {
-                  if (!agentRef.current) {
-                    throw new Error('Agent is not initialized.');
+                  if (
+                    supportsAllDidMethods ||
+                    supportedDidMethods?.includes('did:key')
+                  ) {
+                    if (!agentRef.current) {
+                      throw new Error('Agent is not initialized.');
+                    }
+                    const didResult =
+                      await agentRef.current.dids.create<KeyDidCreateOptions>({
+                        method: 'key',
+                        options: {
+                          keyType,
+                        },
+                      });
+
+                    if (didResult.didState.state !== 'finished') {
+                      throw new Error('DID creation failed.');
+                    }
+
+                    const didKey = DidKey.fromDid(didResult.didState.did);
+
+                    return {
+                      method: 'did',
+                      didUrl: `${didKey.did}#${didKey.key.fingerprint}`,
+                    };
                   }
-                  const didResult =
-                    await agentRef.current.dids.create<KeyDidCreateOptions>({
-                      method: 'key',
-                      options: {
-                        keyType,
-                      },
+
+                  // we also support plain jwk for sd-jwt only
+                  if (
+                    supportsJwk &&
+                    credentialFormat ===
+                      OpenId4VciCredentialFormatProfile.SdJwtVc
+                  ) {
+                    if (!agentRef.current) {
+                      throw new Error('Agent is not initialized.');
+                    }
+                    const key = await agentRef.current.wallet.createKey({
+                      keyType,
                     });
 
-                  if (didResult.didState.state !== 'finished') {
-                    throw new Error('DID creation failed.');
+                    // you now need to return an object instead of VerificationMethod instance
+                    // and method 'did' or 'jwk'
+                    return {
+                      method: 'jwk',
+                      jwk: getJwkFromKey(key),
+                    };
                   }
 
-                  const didKey = DidKey.fromDid(didResult.didState.did);
-
-                  return {
-                    method: 'did',
-                    didUrl: `${didKey.did}#${didKey.key.fingerprint}`,
-                  };
-                }
-
-                // we also support plain jwk for sd-jwt only
-                if (
-                  supportsJwk &&
-                  credentialFormat === OpenId4VciCredentialFormatProfile.SdJwtVc
-                ) {
-                  if (!agentRef.current) {
-                    throw new Error('Agent is not initialized.');
-                  }
-                  const key = await agentRef.current.wallet.createKey({
-                    keyType,
-                  });
-
-                  // you now need to return an object instead of VerificationMethod instance
-                  // and method 'did' or 'jwk'
-                  return {
-                    method: 'jwk',
-                    jwk: getJwkFromKey(key),
-                  };
-                }
-
-                throw new Error('Unable to create a key binding');
+                  throw new Error('Unable to create a key binding');
+                },
               },
-            },
+            );
+
+          console.log(
+            'Received credentials',
+            JSON.stringify(credentials, null, 2),
           );
 
-        console.log(
-          'Received credentials',
-          JSON.stringify(credentials, null, 2),
-        );
-
-        // Store the received credentials
-        const records: Array<W3cCredentialRecord | SdJwtVcRecord> = [];
-        for (const credential of credentials) {
-          if ('compact' in credential) {
-            const record = await agentRef.current.sdJwtVc.store(
-              credential.compact,
-            );
-            records.push(record);
-          } else {
-            const record =
-              await agentRef.current.w3cCredentials.storeCredential({
-                credential,
-              });
-            records.push(record);
+          // Store the received credentials
+          const records: Array<W3cCredentialRecord | SdJwtVcRecord> = [];
+          for (const credential of credentials) {
+            if ('compact' in credential) {
+              const record = await agentRef.current.sdJwtVc.store(
+                credential.compact,
+              );
+              records.push(record);
+            } else {
+              const record =
+                await agentRef.current.w3cCredentials.storeCredential({
+                  credential,
+                });
+              records.push(record);
+            }
           }
+          // if (
+          //   resolvedCredentialOffer &&
+          //   resolvedCredentialOffer.credentialOfferPayload &&
+          //   resolvedCredentialOffer.credentialOfferPayload.pkpassBase64
+          // ) {
+          //   const pkpassBase64 =
+          //     resolvedCredentialOffer.credentialOfferPayload.pkpassBase64;
+          //   setPkpassBase64(pkpassBase64);
+          //   try {
+          //     await PassKit.addPass(pkpassBase64);
+          //     Alert.alert('Success', 'Pass added to Apple Wallet!');
+          //   } catch (e) {
+          //     Alert.alert('Error', 'Failed to add pass to Apple Wallet.');
+          //     console.error('Error adding pass:', e);
+          //   }
+          // }
+          setCredentialOffer('');
+          // Use agentRef.current here
+          // Example:
+          // const credentials = await agentRef.current.modules.openId4VcHolderModule.acceptCredentialOfferUsingPreAuthorizedCode(...);
+        } catch (e) {
+          console;
         }
-        setCredentialOffer('');
-        // Use agentRef.current here
-        // Example:
-        // const credentials = await agentRef.current.modules.openId4VcHolderModule.acceptCredentialOfferUsingPreAuthorizedCode(...);
       }
     };
     processCredentialOffer();
@@ -400,16 +403,24 @@ function App(): React.JSX.Element {
       const w3cCred = w3cCreds.find(c => c.id === id);
       if (w3cCred) {
         let claims: Record<string, any> = {};
+        let pkpassBase64: string | null = null;
+
         if (w3cCred.credential.credentialSubject) {
           if (
             typeof w3cCred.credential.credentialSubject === 'object' &&
             !Array.isArray(w3cCred.credential.credentialSubject)
           ) {
             claims = w3cCred.credential.credentialSubject;
+            if (claims.pkpassAttachment && claims.pkpassAttachment.data) {
+              pkpassBase64 = claims.pkpassAttachment.data;
+            }
           } else if (Array.isArray(w3cCred.credential.credentialSubject)) {
             w3cCred.credential.credentialSubject.forEach((item: any) => {
               if (typeof item === 'object') {
                 claims = {...claims, ...item};
+                if (item.pkpassAttachment && item.pkpassAttachment.data) {
+                  pkpassBase64 = item.pkpassAttachment.data;
+                }
               }
             });
           }
@@ -426,6 +437,7 @@ function App(): React.JSX.Element {
           issuanceDate,
           expirationDate,
           claims,
+          pkpassBase64,
         };
       }
       // Try SD-JWT
@@ -509,27 +521,22 @@ function App(): React.JSX.Element {
       onPress={onPress}
       style={{
         flex: 1,
-        paddingVertical: 16,
-        backgroundColor: selected
-          ? isDarkMode
-            ? THEME.darkCard
-            : THEME.card
-          : 'transparent',
-        borderBottomWidth: 3,
+        paddingVertical: 14,
+        backgroundColor: selected ? THEME.card : 'transparent',
+        borderBottomWidth: 2,
         borderBottomColor: selected ? THEME.primary : 'transparent',
         alignItems: 'center',
-        marginHorizontal: 8,
-        borderRadius: selected ? 12 : 0,
+        marginHorizontal: 4,
+        borderRadius: selected ? 8 : 0,
       }}>
       <Text
         style={{
-          color: selected
-            ? THEME.primary
-            : isDarkMode
-            ? THEME.darkText
-            : THEME.text,
+          color: selected ? THEME.primary : THEME.text,
           fontWeight: selected ? '700' : '500',
-          fontSize: 16,
+          fontSize: 14,
+          fontFamily:
+            Platform.OS === 'ios' ? 'SF Pro Display' : 'sans-serif-medium',
+          letterSpacing: 0.5,
         }}>
         {label}
       </Text>
@@ -748,8 +755,9 @@ function App(): React.JSX.Element {
                   {selectedCredential &&
                   selectedCredential.claims &&
                   Object.keys(selectedCredential.claims).length > 0 ? (
-                    Object.entries(selectedCredential.claims).map(
-                      ([key, value]) => (
+                    Object.entries(selectedCredential.claims)
+                      .filter(([key]) => key !== 'pkpassAttachment') // <-- filter out pkpassAttachment
+                      .map(([key, value]) => (
                         <View key={key} style={styles.claim}>
                           <Text style={styles.claimKey}>{key}:</Text>
                           <Text style={styles.claimValue}>
@@ -758,12 +766,45 @@ function App(): React.JSX.Element {
                               : String(value)}
                           </Text>
                         </View>
-                      ),
-                    )
+                      ))
                   ) : (
                     <Text style={styles.detailValue}>No claims found</Text>
                   )}
                 </View>
+                {Platform.OS === 'ios' && selectedCredential.claims?.pkpass ? (
+                  <AddPassButton
+                    addPassButtonStyle={1}
+                    style={{
+                      marginTop: 16,
+                      width: 160,
+                      height: 50,
+                    }}
+                    onPress={async () => {
+                      try {
+                        await PassKit.addPass(selectedCredential.claims.pkpass);
+                      } catch (error: any) {
+                        console.error('Error adding pass:', error);
+                        Alert.alert(
+                          'Error',
+                          error.message ||
+                            'Failed to add pass to Apple Wallet. Please try again.',
+                        );
+                      }
+                    }}
+                  />
+                ) : Platform.OS === 'ios' ? (
+                  <AddPassButton
+                    addPassButtonStyle={1}
+                    style={{
+                      marginTop: 16,
+                      width: 160,
+                      height: 50,
+                    }}
+                    onPress={async () => {
+                      Alert.alert('No pass data found in credential.');
+                    }}
+                  />
+                ) : null}
               </ScrollView>
             ) : (
               <View style={{alignItems: 'center', padding: 32}}>
@@ -784,15 +825,22 @@ const styles = StyleSheet.create({
   header: {
     padding: 20,
     paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: THEME.primary + '30',
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
+    color: THEME.primary,
+    fontFamily:
+      Platform.OS === 'ios' ? 'SF Pro Display' : 'sans-serif-condensed',
+    letterSpacing: 0.5,
   },
   tabContainer: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 12,
+    backgroundColor: THEME.background,
   },
   container: {
     flex: 1,
@@ -802,57 +850,45 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   card: {
-    borderRadius: 24,
+    borderRadius: 12,
     padding: 24,
-    marginBottom: 16,
-    shadowColor: THEME.primary,
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 8,
+    marginBottom: 20,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.2)',
+    borderColor: '#e2e8f0',
+    backgroundColor: THEME.card,
   },
   cardTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '700',
     marginBottom: 20,
     color: THEME.primary,
+    fontFamily: Platform.OS === 'ios' ? 'SF Pro Display' : 'sans-serif-medium',
+    letterSpacing: 0.5,
   },
   input: {
-    borderRadius: 12,
+    borderRadius: 8,
     padding: 16,
     fontSize: 16,
     marginBottom: 20,
     minHeight: 120,
     textAlignVertical: 'top',
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.2)',
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f8fafc',
+    color: THEME.text,
   },
   primaryButton: {
     backgroundColor: THEME.primary,
-    borderRadius: 12,
+    borderRadius: 8,
     paddingVertical: 16,
     alignItems: 'center',
-    shadowColor: THEME.primary,
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.4)',
   },
   buttonText: {
-    color: '#fff',
+    color: '#ffffff',
     fontWeight: '600',
     fontSize: 16,
+    fontFamily: Platform.OS === 'ios' ? 'SF Pro Text' : 'sans-serif-medium',
+    letterSpacing: 0.5,
   },
   credentialItem: {
     flexDirection: 'row',
@@ -860,11 +896,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 16,
     paddingHorizontal: 20,
-    borderRadius: 16,
-    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    borderRadius: 10,
+    backgroundColor: THEME.card,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.2)',
+    borderColor: '#e2e8f0',
   },
   credentialInfo: {
     flex: 1,
@@ -875,22 +911,26 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 4,
     color: THEME.accent,
+    fontFamily: Platform.OS === 'ios' ? 'SF Pro Display' : 'sans-serif-medium',
+    letterSpacing: 0.5,
   },
   credentialIssuer: {
     fontSize: 14,
-    color: 'rgba(226, 232, 240, 0.7)',
+    color: THEME.text,
+    opacity: 0.8,
+    fontFamily: Platform.OS === 'ios' ? 'SF Pro Text' : 'sans-serif',
   },
   deleteButton: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    backgroundColor: THEME.error + '15',
     paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    paddingHorizontal: 14,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.4)',
+    borderColor: THEME.error + '30',
   },
   deleteButtonText: {
-    color: '#ef4444',
-    fontSize: 14,
+    color: THEME.error,
+    fontSize: 12,
     fontWeight: '600',
   },
   emptyText: {
@@ -898,6 +938,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     opacity: 0.7,
     marginTop: 20,
+    color: THEME.text,
   },
   modalOverlay: {
     flex: 1,
@@ -906,12 +947,12 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   modalContent: {
-    borderRadius: 24,
+    borderRadius: 16,
     padding: 24,
     maxHeight: '90%',
     backgroundColor: THEME.card,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.2)',
+    borderColor: '#e2e8f0',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -919,64 +960,71 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(99, 102, 241, 0.2)',
+    borderBottomColor: '#e2e8f0',
     paddingBottom: 16,
   },
   modalTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '700',
-    color: THEME.accent,
+    color: THEME.primary,
+    fontFamily: Platform.OS === 'ios' ? 'Orbitron-Bold' : 'Roboto',
   },
   modalBody: {
-    // flex: 1,
     paddingBottom: 20,
   },
   detailSection: {
     marginBottom: 20,
   },
   detailLabel: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
-    marginBottom: 4,
-    opacity: 0.7,
+    marginBottom: 6,
+    opacity: 0.8,
+    color: THEME.primary,
   },
   detailValue: {
     fontSize: 16,
     fontWeight: '500',
+    color: THEME.text,
   },
   claim: {
     flexDirection: 'column',
-    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    backgroundColor: '#f0f4fa', // Slightly darker background for better contrast
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 8,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.2)',
+    borderColor: '#d0d7e2', // Darker border for better visibility
   },
   claimKey: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     marginBottom: 8,
-    color: THEME.accent,
+    color: THEME.primary,
+    fontFamily: Platform.OS === 'ios' ? 'SF Pro Text' : 'sans-serif-medium',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   claimValue: {
     fontSize: 16,
-    fontWeight: '500',
-    color: THEME.text,
+    fontWeight: '400',
+    color: '#333',
+    fontFamily: Platform.OS === 'ios' ? 'SF Mono' : 'monospace',
+    letterSpacing: 0.2,
   },
   closeButton: {
     padding: 8,
-    borderRadius: 16,
-    backgroundColor: 'rgba(99, 102, 241, 0.08)',
+    borderRadius: 8,
+    backgroundColor: THEME.error + '15',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: THEME.error + '30',
   },
   closeButtonText: {
-    fontSize: 22,
-    color: THEME.primary,
-    fontWeight: '700',
+    fontSize: 16,
+    color: THEME.error,
+    fontWeight: '600',
   },
 });
 
