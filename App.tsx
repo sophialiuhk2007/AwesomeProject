@@ -66,6 +66,8 @@ type CredentialItem = {
   id: string;
   type: string[];
   issuer: string;
+  vct?: string;
+  issueDate?: string;
 };
 
 // Add new type for detailed credential view
@@ -73,10 +75,11 @@ type DetailedCredentialItem = {
   id: string;
   type: string[];
   issuer: string;
-  issuanceDate?: string;
+  issueDate?: string;
   expirationDate?: string;
   claims: Record<string, any>;
   pkpassBase64?: string | null;
+  vct?: string; // <-- add this line
 };
 
 // Add simple tab navigation state
@@ -93,13 +96,27 @@ function App(): React.JSX.Element {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const agentRef = useRef<Agent | null>(null);
   const [pkpassBase64, setPkpassBase64] = useState<string | null>(null);
-
+  const [loading, setLoading] = useState(false);
   function base64UrlDecode(input: string) {
     // Replace URL-safe chars and pad with '='
     input = input.replace(/-/g, '+').replace(/_/g, '/');
     while (input.length % 4) input += '=';
     const decoded = Buffer.from(input, 'base64').toString('utf-8');
     return decoded;
+  }
+  function formatVctLabel(vct?: string) {
+    if (!vct) return '';
+    // Insert space before capital letters and capitalize first letter
+    return vct
+      .replace(/([a-z])([A-Z])/g, '$1 $2') // camelCase to camel Case
+      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2') // ABBRWord to ABBR Word
+      .replace(/_/g, ' ') // underscores to spaces
+      .replace(/([a-z])([0-9])/gi, '$1 $2') // letters and numbers
+      .replace(/([0-9])([a-zA-Z])/gi, '$1 $2') // numbers and letters
+      .replace(/([a-z])([A-Z])/g, '$1 $2') // lowercase followed by uppercase
+      .replace(/\s+/g, ' ') // collapse multiple spaces
+      .trim()
+      .replace(/^./, s => s.toUpperCase()); // capitalize first letter
   }
   React.useEffect(() => {
     const config: InitConfig = {
@@ -263,11 +280,14 @@ function App(): React.JSX.Element {
           //   }
           // }
           setCredentialOffer('');
+          setTab('MyCredentials'); // <-- Navigate to MyCredentials tab
           // Use agentRef.current here
           // Example:
           // const credentials = await agentRef.current.modules.openId4VcHolderModule.acceptCredentialOfferUsingPreAuthorizedCode(...);
         } catch (e) {
           console;
+        } finally {
+          setLoading(false);
         }
       }
     };
@@ -333,19 +353,61 @@ function App(): React.JSX.Element {
       const sdJwtCredentials = await agentRef.current.sdJwtVc.getAll();
 
       const formattedCredentials: CredentialItem[] = [
-        ...w3cCredentials.map(cred => ({
-          id: cred.id,
-          type: cred.credential.type,
-          issuer:
-            typeof cred.credential.issuer === 'string'
-              ? cred.credential.issuer
-              : cred.credential.issuer?.id || 'Unknown Issuer',
-        })),
-        ...sdJwtCredentials.map(cred => ({
-          id: cred.id,
-          type: ['SD-JWT-VC'],
-          issuer: 'SD-JWT Issuer', // You might want to extract this from the JWT
-        })),
+        ...w3cCredentials.map(cred => {
+          // Extract vct from claims (credentialSubject)
+          let vct: string | undefined;
+          if (cred.credential.credentialSubject) {
+            if (
+              typeof cred.credential.credentialSubject === 'object' &&
+              !Array.isArray(cred.credential.credentialSubject)
+            ) {
+              vct = (cred.credential.credentialSubject as any)?.vct;
+            } else if (Array.isArray(cred.credential.credentialSubject)) {
+              for (const item of cred.credential.credentialSubject) {
+                if (item && typeof item === 'object' && (item as any)?.vct) {
+                  vct = (item as any).vct;
+                  break;
+                }
+              }
+            }
+          }
+          return {
+            id: cred.id,
+            type: cred.credential.type,
+            issuer:
+              typeof cred.credential.issuer === 'string'
+                ? cred.credential.issuer
+                : cred.credential.issuer?.id || 'Unknown Issuer',
+            vct,
+          };
+        }),
+        ...sdJwtCredentials.map(cred => {
+          // Decode compactSdJwtVc and extract vct and issueDate
+          let vct: string | undefined;
+          let issueDate: string | undefined;
+          try {
+            const jwt = (cred as any).compactSdJwtVc || (cred as any).jwt;
+            if (jwt) {
+              const jwtParts = jwt.split('~')[0];
+              const [header, payload] = jwtParts.split('.').slice(0, 2);
+              if (payload) {
+                const decoded = JSON.parse(base64UrlDecode(payload));
+                vct = decoded.vct || decoded?.vc?.credentialSubject?.vct;
+                issueDate =
+                  decoded.issueDate || decoded.vc?.credentialSubject.issueDate;
+              }
+            }
+          } catch (e) {
+            // ignore decoding errors
+          }
+          return {
+            id: cred.id,
+            type: ['SD-JWT-VC'],
+            issuer: '', // Not used in list anymore
+            vct,
+            issueDate,
+          };
+        }),
       ];
 
       setCredentials(formattedCredentials);
@@ -434,7 +496,7 @@ function App(): React.JSX.Element {
             typeof w3cCred.credential.issuer === 'string'
               ? w3cCred.credential.issuer
               : w3cCred.credential.issuer?.id || 'Unknown Issuer',
-          issuanceDate,
+          issueDate: issuanceDate,
           expirationDate,
           claims,
           pkpassBase64,
@@ -498,6 +560,7 @@ function App(): React.JSX.Element {
   const safePadding = 20;
 
   const handleInputSubmit = () => {
+    setLoading(true);
     setCredentialOffer(inputValue);
     setInputValue('');
   };
@@ -555,267 +618,312 @@ function App(): React.JSX.Element {
         barStyle={isDarkMode ? 'light-content' : 'dark-content'}
         backgroundColor={isDarkMode ? THEME.darkBackground : THEME.background}
       />
+      <>
+        {loading ? (
+          <View
+            style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
+            <Text
+              style={{color: THEME.primary, fontSize: 20, marginBottom: 16}}>
+              Accepting credential...
+            </Text>
+          </View>
+        ) : (
+          <>
+            <View style={styles.header}>
+              <Text
+                style={[
+                  styles.headerTitle,
+                  {
+                    color: isDarkMode ? THEME.darkText : THEME.text,
+                  },
+                ]}>
+                Digital Wallet
+              </Text>
+            </View>
 
-      <View style={styles.header}>
-        <Text
-          style={[
-            styles.headerTitle,
-            {
-              color: isDarkMode ? THEME.darkText : THEME.text,
-            },
-          ]}>
-          Digital Wallet
-        </Text>
-      </View>
+            <View style={styles.tabContainer}>
+              <TabButton
+                label="Add New"
+                selected={tab === 'Credentials'}
+                onPress={() => setTab('Credentials')}
+              />
+              <TabButton
+                label="Verify"
+                selected={tab === 'Verification'}
+                onPress={() => setTab('Verification')}
+              />
+              <TabButton
+                label="My Creds"
+                selected={tab === 'MyCredentials'}
+                onPress={() => setTab('MyCredentials')}
+              />
+            </View>
 
-      <View style={styles.tabContainer}>
-        <TabButton
-          label="Add New"
-          selected={tab === 'Credentials'}
-          onPress={() => setTab('Credentials')}
-        />
-        <TabButton
-          label="Verify"
-          selected={tab === 'Verification'}
-          onPress={() => setTab('Verification')}
-        />
-        <TabButton
-          label="My Creds"
-          selected={tab === 'MyCredentials'}
-          onPress={() => setTab('MyCredentials')}
-        />
-      </View>
+            <ScrollView
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}>
+              <View
+                style={[
+                  styles.container,
+                  {
+                    backgroundColor: isDarkMode
+                      ? THEME.darkBackground
+                      : THEME.background,
+                  },
+                ]}>
+                {tab === 'MyCredentials' ? (
+                  <View
+                    style={[
+                      styles.card,
+                      {
+                        backgroundColor: isDarkMode
+                          ? THEME.darkCard
+                          : THEME.card,
+                      },
+                    ]}>
+                    <Text style={styles.cardTitle}>My Credentials</Text>
+                    {credentials.length === 0 ? (
+                      <Text
+                        style={[
+                          styles.emptyText,
+                          {
+                            color: isDarkMode ? THEME.darkText : THEME.text,
+                          },
+                        ]}>
+                        No credentials found
+                      </Text>
+                    ) : (
+                      credentials.map(cred => (
+                        <TouchableOpacity
+                          key={cred.id}
+                          style={styles.credentialItem}
+                          onPress={() => handleCredentialPress(cred.id)}>
+                          <View style={styles.credentialInfo}>
+                            <Text
+                              style={[
+                                styles.credentialType,
+                                {
+                                  color: THEME.accent,
+                                },
+                              ]}>
+                              {formatVctLabel(cred.vct)}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.credentialIssuer,
+                                {
+                                  color: 'rgba(226, 232, 240, 0.7)',
+                                },
+                              ]}>
+                              {cred.issueDate
+                                ? `Issued: ${new Date(
+                                    cred.issueDate,
+                                  ).toLocaleString()}`
+                                : cred.issuer}
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => handleDeleteCredential(cred.id)}
+                            style={styles.deleteButton}>
+                            <Text style={styles.deleteButtonText}>Delete</Text>
+                          </TouchableOpacity>
+                        </TouchableOpacity>
+                      ))
+                    )}
+                  </View>
+                ) : (
+                  <>
+                    {tab === 'Credentials' ? (
+                      <View
+                        style={[
+                          styles.card,
+                          {
+                            backgroundColor: isDarkMode
+                              ? THEME.darkCard
+                              : THEME.card,
+                          },
+                        ]}>
+                        <Text style={styles.cardTitle}>Add New Credential</Text>
+                        <TextInput
+                          style={[
+                            styles.input,
+                            {
+                              backgroundColor: 'rgba(15, 23, 42, 0.6)',
+                              color: isDarkMode ? THEME.darkText : THEME.text,
+                            },
+                          ]}
+                          placeholder="Paste credential offer URL or scan QR code"
+                          placeholderTextColor={
+                            isDarkMode ? '#6C7693' : '#8395A7'
+                          }
+                          value={inputValue}
+                          onChangeText={setInputValue}
+                          multiline
+                        />
+                        <TouchableOpacity
+                          style={styles.primaryButton}
+                          onPress={handleInputSubmit}>
+                          <Text style={styles.buttonText}>
+                            Accept Credential
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <View
+                        style={[
+                          styles.card,
+                          {
+                            backgroundColor: isDarkMode
+                              ? THEME.darkCard
+                              : THEME.card,
+                          },
+                        ]}>
+                        <Text style={styles.cardTitle}>
+                          Verification Request
+                        </Text>
+                        <TextInput
+                          style={[
+                            styles.input,
+                            {
+                              backgroundColor: 'rgba(15, 23, 42, 0.6)',
+                              color: isDarkMode ? THEME.darkText : THEME.text,
+                            },
+                          ]}
+                          placeholder="Paste verification request or scan QR code"
+                          placeholderTextColor={
+                            isDarkMode ? '#6C7693' : '#8395A7'
+                          }
+                          value={authInputValue}
+                          onChangeText={setAuthInputValue}
+                          multiline
+                        />
+                        <TouchableOpacity
+                          style={styles.primaryButton}
+                          onPress={handleAuthInputSubmit}>
+                          <Text style={styles.buttonText}>Verify</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </>
+                )}
+              </View>
+            </ScrollView>
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}>
-        <View
-          style={[
-            styles.container,
-            {
-              backgroundColor: isDarkMode
-                ? THEME.darkBackground
-                : THEME.background,
-            },
-          ]}>
-          {tab === 'MyCredentials' ? (
-            <View
-              style={[
-                styles.card,
-                {
-                  backgroundColor: isDarkMode ? THEME.darkCard : THEME.card,
-                },
-              ]}>
-              <Text style={styles.cardTitle}>My Credentials</Text>
-              {credentials.length === 0 ? (
-                <Text
+            <Modal
+              visible={isModalVisible}
+              animationType="slide"
+              transparent={true}
+              onRequestClose={() => setIsModalVisible(false)}>
+              <View style={styles.modalOverlay}>
+                <View
                   style={[
-                    styles.emptyText,
+                    styles.modalContent,
                     {
-                      color: isDarkMode ? THEME.darkText : THEME.text,
+                      backgroundColor: THEME.card,
                     },
                   ]}>
-                  No credentials found
-                </Text>
-              ) : (
-                credentials.map(cred => (
-                  <TouchableOpacity
-                    key={cred.id}
-                    style={styles.credentialItem}
-                    onPress={() => handleCredentialPress(cred.id)}>
-                    <View style={styles.credentialInfo}>
-                      <Text
-                        style={[
-                          styles.credentialType,
-                          {
-                            color: THEME.accent,
-                          },
-                        ]}>
-                        {cred.type[0]}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.credentialIssuer,
-                          {
-                            color: 'rgba(226, 232, 240, 0.7)',
-                          },
-                        ]}>
-                        {cred.issuer}
+                  <View style={styles.modalHeader}>
+                    <Text style={[styles.modalTitle, {color: THEME.accent}]}>
+                      Credential Details
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => setIsModalVisible(false)}
+                      style={styles.closeButton}>
+                      <Text style={styles.closeButtonText}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {selectedCredential ? (
+                    <ScrollView style={styles.modalBody}>
+                      <View style={styles.detailSection}>
+                        {selectedCredential &&
+                        selectedCredential.claims &&
+                        Object.keys(selectedCredential.claims).length > 0 ? (
+                          Object.entries(selectedCredential.claims)
+                            .filter(
+                              ([key]) =>
+                                ![
+                                  'pkpass',
+                                  'pkpassAttachment',
+                                  'cnf',
+                                  'iss',
+                                  'iat',
+                                  '_sd',
+                                  '_sd_alg',
+                                  'vct',
+                                  'metadata',
+                                  'issueDate',
+                                ].includes(key),
+                            )
+                            .map(([key, value]) => (
+                              <View key={key} style={styles.claim}>
+                                <Text style={styles.claimKey}>
+                                  {formatVctLabel(key)}:
+                                </Text>
+                                <Text style={styles.claimValue}>
+                                  {typeof value === 'object'
+                                    ? JSON.stringify(value, null, 2)
+                                    : String(value)}
+                                </Text>
+                              </View>
+                            ))
+                        ) : (
+                          <Text style={styles.detailValue}>
+                            No claims found
+                          </Text>
+                        )}
+                      </View>
+                      {Platform.OS === 'ios' &&
+                      selectedCredential.claims?.pkpass ? (
+                        <AddPassButton
+                          addPassButtonStyle={1}
+                          style={{
+                            marginTop: 16,
+                            width: 160,
+                            height: 50,
+                          }}
+                          onPress={async () => {
+                            try {
+                              await PassKit.addPass(
+                                selectedCredential.claims.pkpass,
+                              );
+                            } catch (error: any) {
+                              console.error('Error adding pass:', error);
+                              Alert.alert(
+                                'Error',
+                                error.message ||
+                                  'Failed to add pass to Apple Wallet. Please try again.',
+                              );
+                            }
+                          }}
+                        />
+                      ) : Platform.OS === 'ios' ? (
+                        <AddPassButton
+                          addPassButtonStyle={1}
+                          style={{
+                            marginTop: 16,
+                            width: 160,
+                            height: 50,
+                          }}
+                          onPress={async () => {
+                            Alert.alert('No pass data found in credential.');
+                          }}
+                        />
+                      ) : null}
+                    </ScrollView>
+                  ) : (
+                    <View style={{alignItems: 'center', padding: 32}}>
+                      <Text style={{color: THEME.primary, fontSize: 18}}>
+                        Loading...
                       </Text>
                     </View>
-                    <TouchableOpacity
-                      onPress={() => handleDeleteCredential(cred.id)}
-                      style={styles.deleteButton}>
-                      <Text style={styles.deleteButtonText}>Delete</Text>
-                    </TouchableOpacity>
-                  </TouchableOpacity>
-                ))
-              )}
-            </View>
-          ) : (
-            <>
-              {tab === 'Credentials' ? (
-                <View
-                  style={[
-                    styles.card,
-                    {
-                      backgroundColor: isDarkMode ? THEME.darkCard : THEME.card,
-                    },
-                  ]}>
-                  <Text style={styles.cardTitle}>Add New Credential</Text>
-                  <TextInput
-                    style={[
-                      styles.input,
-                      {
-                        backgroundColor: 'rgba(15, 23, 42, 0.6)',
-                        color: isDarkMode ? THEME.darkText : THEME.text,
-                      },
-                    ]}
-                    placeholder="Paste credential offer URL or scan QR code"
-                    placeholderTextColor={isDarkMode ? '#6C7693' : '#8395A7'}
-                    value={inputValue}
-                    onChangeText={setInputValue}
-                    multiline
-                  />
-                  <TouchableOpacity
-                    style={styles.primaryButton}
-                    onPress={handleInputSubmit}>
-                    <Text style={styles.buttonText}>Accept Credential</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <View
-                  style={[
-                    styles.card,
-                    {
-                      backgroundColor: isDarkMode ? THEME.darkCard : THEME.card,
-                    },
-                  ]}>
-                  <Text style={styles.cardTitle}>Verification Request</Text>
-                  <TextInput
-                    style={[
-                      styles.input,
-                      {
-                        backgroundColor: 'rgba(15, 23, 42, 0.6)',
-                        color: isDarkMode ? THEME.darkText : THEME.text,
-                      },
-                    ]}
-                    placeholder="Paste verification request or scan QR code"
-                    placeholderTextColor={isDarkMode ? '#6C7693' : '#8395A7'}
-                    value={authInputValue}
-                    onChangeText={setAuthInputValue}
-                    multiline
-                  />
-                  <TouchableOpacity
-                    style={styles.primaryButton}
-                    onPress={handleAuthInputSubmit}>
-                    <Text style={styles.buttonText}>Verify</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </>
-          )}
-        </View>
-      </ScrollView>
-
-      <Modal
-        visible={isModalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setIsModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalContent,
-              {
-                backgroundColor: THEME.card,
-              },
-            ]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, {color: THEME.accent}]}>
-                Credential Details
-              </Text>
-              <TouchableOpacity
-                onPress={() => setIsModalVisible(false)}
-                style={styles.closeButton}>
-                <Text style={styles.closeButtonText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            {selectedCredential ? (
-              <ScrollView style={styles.modalBody}>
-                <View style={styles.detailSection}>
-                  <Text
-                    style={[
-                      styles.detailLabel,
-                      {color: isDarkMode ? THEME.darkText : THEME.text},
-                    ]}>
-                    Claims
-                  </Text>
-                  {selectedCredential &&
-                  selectedCredential.claims &&
-                  Object.keys(selectedCredential.claims).length > 0 ? (
-                    Object.entries(selectedCredential.claims)
-                      .filter(([key]) => key !== 'pkpassAttachment') // <-- filter out pkpassAttachment
-                      .map(([key, value]) => (
-                        <View key={key} style={styles.claim}>
-                          <Text style={styles.claimKey}>{key}:</Text>
-                          <Text style={styles.claimValue}>
-                            {typeof value === 'object'
-                              ? JSON.stringify(value, null, 2)
-                              : String(value)}
-                          </Text>
-                        </View>
-                      ))
-                  ) : (
-                    <Text style={styles.detailValue}>No claims found</Text>
                   )}
                 </View>
-                {Platform.OS === 'ios' && selectedCredential.claims?.pkpass ? (
-                  <AddPassButton
-                    addPassButtonStyle={1}
-                    style={{
-                      marginTop: 16,
-                      width: 160,
-                      height: 50,
-                    }}
-                    onPress={async () => {
-                      try {
-                        await PassKit.addPass(selectedCredential.claims.pkpass);
-                      } catch (error: any) {
-                        console.error('Error adding pass:', error);
-                        Alert.alert(
-                          'Error',
-                          error.message ||
-                            'Failed to add pass to Apple Wallet. Please try again.',
-                        );
-                      }
-                    }}
-                  />
-                ) : Platform.OS === 'ios' ? (
-                  <AddPassButton
-                    addPassButtonStyle={1}
-                    style={{
-                      marginTop: 16,
-                      width: 160,
-                      height: 50,
-                    }}
-                    onPress={async () => {
-                      Alert.alert('No pass data found in credential.');
-                    }}
-                  />
-                ) : null}
-              </ScrollView>
-            ) : (
-              <View style={{alignItems: 'center', padding: 32}}>
-                <Text style={{color: THEME.primary, fontSize: 18}}>
-                  Loading...
-                </Text>
               </View>
-            )}
-          </View>
-        </View>
-      </Modal>
+            </Modal>
+          </>
+        )}
+      </>
     </SafeAreaView>
   );
 }
