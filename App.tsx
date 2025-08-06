@@ -510,20 +510,35 @@ function App(): React.JSX.Element {
       if (jwt) {
         let claims: Record<string, any> = {};
         try {
-          // SD-JWTs may have ~ delimiters, so split at ~ and use the first part (the JWT)
-          const jwtParts = jwt.split('~')[0];
-          const [header, payload] = jwtParts.split('.').slice(0, 2);
+          // Split SD-JWT into parts
+          const jwtPartsArr = jwt.split('~');
+          // First part is the JWT (header.payload.signature)
+          const [header, payload] = jwtPartsArr[0].split('.').slice(0, 2);
           if (payload) {
             const decoded = JSON.parse(base64UrlDecode(payload));
-            console.log('Decoded SD-JWT payload:', decoded);
             claims = decoded.vc?.credentialSubject || decoded || {};
           } else {
             console.warn('No payload found in SD-JWT JWT:', jwt);
           }
+          // The rest are disclosures, decode and merge
+          for (let i = 1; i < jwtPartsArr.length; i++) {
+            try {
+              const disclosureDecoded = base64UrlDecode(jwtPartsArr[i]);
+              const disclosureArr = JSON.parse(disclosureDecoded);
+              // SD-JWT disclosures are typically [salt, claimName, claimValue]
+              if (Array.isArray(disclosureArr) && disclosureArr.length >= 3) {
+                const claimName = disclosureArr[1];
+                const claimValue = disclosureArr[2];
+                claims[claimName] = claimValue;
+              }
+            } catch (e) {
+              console.warn('Failed to decode SD-JWT disclosure:', e);
+            }
+          }
+          console.log('Claims to be shown:', claims);
         } catch (e) {
           console.warn('Failed to decode SD-JWT claims:', e);
         }
-        console.log('Claims to be shown:', claims);
         return {
           id: sdJwtCred.id,
           type: ['SD-JWT-VC'],
