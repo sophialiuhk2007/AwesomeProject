@@ -1,0 +1,1 @@
+../../../../../../node_modules/@hyperledger/aries-askar-react-native/cpp/include/libaries_askar.h

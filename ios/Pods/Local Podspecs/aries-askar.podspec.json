@@ -1,0 +1,31 @@
+{
+  "name": "aries-askar",
+  "version": "0.2.3",
+  "summary": "React Native wrapper for Aries Askar",
+  "homepage": "https://github.com/hyperledger/aries-askar/tree/main/wrappers/javascript/packages/aries-askar-react-native",
+  "license": "Apache-2.0",
+  "authors": "Hyperledger (https://github.com/hyperledger)",
+  "platforms": {
+    "ios": "12.0"
+  },
+  "source": {
+    "git": "https://github.com/hyperledger/aries-askar",
+    "tag": "0.2.3"
+  },
+  "header_mappings_dir": "cpp",
+  "pod_target_xcconfig": {
+    "USE_HEADERMAP": "No"
+  },
+  "ios": {
+    "vendored_frameworks": "native/mobile/ios/aries_askar.xcframework"
+  },
+  "source_files": [
+    "ios/**/*.{h,m,mm}",
+    "cpp/**/*.{h,cpp}"
+  ],
+  "dependencies": {
+    "React-Core": [],
+    "React-callinvoker": [],
+    "React": []
+  }
+}
