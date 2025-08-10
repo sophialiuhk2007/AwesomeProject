@@ -1,12 +1,10 @@
 {
-  "name": "digital-wallet-app",
-  "version": "1.0.0",
+  "name": "AwesomeProject",
+  "version": "0.0.1",
   "private": true,
   "scripts": {
     "android": "react-native run-android",
     "ios": "react-native run-ios",
-    "ios-release": "react-native run-ios --configuration Release",
-    "build-ios": "cd ios && xcodebuild -workspace AwesomeProject.xcworkspace -scheme AwesomeProject -configuration Release -destination generic/platform=iOS -archivePath AwesomeProject.xcarchive archive",
     "lint": "eslint .",
     "start": "react-native start",
     "test": "jest"
@@ -17,7 +15,6 @@
     "@credo-ts/openid4vc": "^0.5.3",
     "@credo-ts/react-native": "^0.5.15",
     "@hyperledger/aries-askar-react-native": "^0.2.3",
-    "@react-native-firebase/storage": "^22.2.1",
     "@sd-jwt/decode": "^0.14.0",
     "@sd-jwt/sd-jwt-vc": "^0.14.1",
     "@sd-jwt/utils": "^0.14.0",

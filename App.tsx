@@ -19,6 +19,7 @@ import {
   Dimensions,
   Modal,
   Platform,
+  Alert,
 } from 'react-native';
 
 import {Colors} from 'react-native/Libraries/NewAppScreen';
@@ -43,11 +44,41 @@ import {
 } from '@credo-ts/openid4vc';
 import {TextEncoder, TextDecoder} from 'text-encoding';
 import PassKit, {AddPassButton} from 'react-native-passkit-wallet';
-import {Alert} from 'react-native';
 import {Buffer} from 'buffer';
-import axios from 'axios';
-import storage from '@react-native-firebase/storage';
-import {create} from 'domain';
+
+// Error Boundary Component
+class ErrorBoundary extends React.Component {
+  constructor(props: any) {
+    super(props);
+    this.state = {hasError: false, error: null};
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return {hasError: true, error};
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error('App Error:', error, errorInfo);
+    // You could log this to a crash reporting service
+  }
+
+  render() {
+    if ((this.state as any).hasError) {
+      return (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Something went wrong.</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => this.setState({hasError: false, error: null})}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (this.props as any).children;
+  }
+}
 
 if (typeof global.TextDecoder === 'undefined') {
   // @ts-ignore
@@ -97,6 +128,7 @@ function App(): React.JSX.Element {
   const agentRef = useRef<Agent | null>(null);
   const [pkpassBase64, setPkpassBase64] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [verificationLoading, setVerificationLoading] = useState(false);
   function base64UrlDecode(input: string) {
     // Replace URL-safe chars and pad with '='
     input = input.replace(/-/g, '+').replace(/_/g, '/');
@@ -119,36 +151,46 @@ function App(): React.JSX.Element {
       .replace(/^./, s => s.toUpperCase()); // capitalize first letter
   }
   React.useEffect(() => {
-    const config: InitConfig = {
-      label: 'docs-agent-react-native',
-      walletConfig: {
-        id: 'wallet-id',
-        key: 'testkey0000000000000000000000000',
-      },
+    const initializeAgent = async () => {
+      try {
+        setLoading(true);
+        console.log('Starting agent initialization...');
+
+        const config: InitConfig = {
+          label: 'docs-agent-react-native',
+          walletConfig: {
+            id: 'wallet-id',
+            key: 'testkey0000000000000000000000000',
+          },
+        };
+
+        const agent = new Agent({
+          config,
+          dependencies: agentDependencies,
+          modules: {
+            askar: new AskarModule({
+              ariesAskar,
+            }),
+            openId4VcHolderModule: new OpenId4VcHolderModule(),
+          },
+        });
+
+        await agent.initialize();
+        agentRef.current = agent; // Store the initialized agent in the ref
+        console.log('Agent initialized successfully!');
+        setLoading(false);
+      } catch (error) {
+        console.error('Failed to initialize agent:', error);
+        setLoading(false);
+        Alert.alert(
+          'Initialization Error',
+          'Failed to initialize the digital wallet. Please try restarting the app.',
+          [{text: 'OK'}],
+        );
+      }
     };
 
-    const agent = new Agent({
-      config,
-      dependencies: agentDependencies,
-      modules: {
-        askar: new AskarModule({
-          ariesAskar,
-        }),
-        openId4VcHolderModule: new OpenId4VcHolderModule(),
-      },
-    });
-
-    agent
-      .initialize()
-      .then(() => {
-        agentRef.current = agent; // Store the initialized agent in the ref
-        console.log('Agent initialized!');
-      })
-      .catch(e => {
-        console.error(
-          `Something went wrong while setting up the agent! Message: ${e}`,
-        );
-      });
+    initializeAgent();
   }, []);
 
   React.useEffect(() => {
@@ -285,7 +327,12 @@ function App(): React.JSX.Element {
           // Example:
           // const credentials = await agentRef.current.modules.openId4VcHolderModule.acceptCredentialOfferUsingPreAuthorizedCode(...);
         } catch (e) {
-          console;
+          console.error('Failed to process credential offer:', e);
+          Alert.alert(
+            'Credential Error',
+            'Failed to process the credential offer. Please try again.',
+            [{text: 'OK'}],
+          );
         } finally {
           setLoading(false);
         }
@@ -297,47 +344,65 @@ function App(): React.JSX.Element {
   React.useEffect(() => {
     const processAuthorizationRequest = async () => {
       if (authorizationRequest && agentRef.current) {
-        console.log('Authorization Request:', authorizationRequest);
-        const resolvedAuthorizationRequest =
-          await agentRef.current.modules.openId4VcHolderModule.resolveSiopAuthorizationRequest(
-            authorizationRequest,
-          );
-        console.log(
-          'Resolved credentials for request',
-          JSON.stringify(
-            resolvedAuthorizationRequest.presentationExchange
-              .credentialsForRequest,
-            null,
-            2,
-          ),
-        );
-
-        const presentationExchangeService =
-          agentRef.current.dependencyManager.resolve(
-            DifPresentationExchangeService,
-          );
-        // Automatically select credentials. In a wallet you could manually choose which credentials to return based on the "resolvedAuthorizationRequest.presentationExchange.credentialsForRequest" value
-        const selectedCredentials =
-          presentationExchangeService.selectCredentialsForRequest(
-            resolvedAuthorizationRequest.presentationExchange
-              .credentialsForRequest,
+        try {
+          console.log('Authorization Request:', authorizationRequest);
+          const resolvedAuthorizationRequest =
+            await agentRef.current.modules.openId4VcHolderModule.resolveSiopAuthorizationRequest(
+              authorizationRequest,
+            );
+          console.log(
+            'Resolved credentials for request',
+            JSON.stringify(
+              resolvedAuthorizationRequest.presentationExchange
+                .credentialsForRequest,
+              null,
+              2,
+            ),
           );
 
-        // issuer only supports pre-authorized flow for now
-        const authorizationResponse =
-          await agentRef.current.modules.openId4VcHolderModule.acceptSiopAuthorizationRequest(
-            {
-              authorizationRequest:
-                resolvedAuthorizationRequest.authorizationRequest,
-              presentationExchange: {
-                credentials: selectedCredentials,
+          const presentationExchangeService =
+            agentRef.current.dependencyManager.resolve(
+              DifPresentationExchangeService,
+            );
+          // Automatically select credentials. In a wallet you could manually choose which credentials to return based on the "resolvedAuthorizationRequest.presentationExchange.credentialsForRequest" value
+          const selectedCredentials =
+            presentationExchangeService.selectCredentialsForRequest(
+              resolvedAuthorizationRequest.presentationExchange
+                .credentialsForRequest,
+            );
+
+          // issuer only supports pre-authorized flow for now
+          const authorizationResponse =
+            await agentRef.current.modules.openId4VcHolderModule.acceptSiopAuthorizationRequest(
+              {
+                authorizationRequest:
+                  resolvedAuthorizationRequest.authorizationRequest,
+                presentationExchange: {
+                  credentials: selectedCredentials,
+                },
               },
-            },
+            );
+          console.log(
+            'Submitted authorization response',
+            JSON.stringify(authorizationResponse.submittedResponse, null, 2),
           );
-        console.log(
-          'Submitted authorization response',
-          JSON.stringify(authorizationResponse.submittedResponse, null, 2),
-        );
+
+          // Show success message
+          Alert.alert(
+            'Verification Complete',
+            'Your credentials have been successfully verified and submitted.',
+            [{text: 'OK'}],
+          );
+        } catch (e) {
+          console.error('Failed to process authorization request:', e);
+          Alert.alert(
+            'Authorization Error',
+            'Failed to process the authorization request. Please try again.',
+            [{text: 'OK'}],
+          );
+        } finally {
+          setVerificationLoading(false);
+        }
       }
     };
     processAuthorizationRequest();
@@ -413,6 +478,11 @@ function App(): React.JSX.Element {
       setCredentials(formattedCredentials);
     } catch (error) {
       console.error('Error fetching credentials:', error);
+      Alert.alert(
+        'Credentials Error',
+        'Failed to load credentials. Please try again.',
+        [{text: 'OK'}],
+      );
     }
   };
 
@@ -434,14 +504,24 @@ function App(): React.JSX.Element {
           await agentRef.current.sdJwtVc.deleteById(id);
           deleted = true;
         } catch (sdJwtError) {
-          // Ignore if not found in SD-JWT either
+          console.error('Error deleting SD-JWT credential:', sdJwtError);
         }
       } else {
         console.error('Error deleting credential:', error);
+        Alert.alert(
+          'Delete Error',
+          'Failed to delete credential. Please try again.',
+          [{text: 'OK'}],
+        );
+        return;
       }
     }
+
     if (!deleted) {
       console.error('Credential not found in either store:', id);
+      Alert.alert('Not Found', 'Credential could not be found.', [
+        {text: 'OK'},
+      ]);
     } else {
       fetchCredentials(); // Refresh the list
     }
@@ -553,17 +633,33 @@ function App(): React.JSX.Element {
       }
     } catch (error) {
       console.error('Error fetching credential details:', error);
+      Alert.alert(
+        'Credential Details Error',
+        'Failed to load credential details. Please try again.',
+        [{text: 'OK'}],
+      );
     }
     return null;
   };
 
   const handleCredentialPress = async (id: string) => {
-    setSelectedCredential(null); // Optional, to clear previous
-    const detailedCred = await getDetailedCredential(id);
-    console.log('Fetched credential details:', detailedCred);
-    if (detailedCred) {
-      setSelectedCredential(detailedCred);
-      setIsModalVisible(true); // <-- Move this here
+    try {
+      setSelectedCredential(null); // Optional, to clear previous
+      const detailedCred = await getDetailedCredential(id);
+      console.log('Fetched credential details:', detailedCred);
+      if (detailedCred) {
+        setSelectedCredential(detailedCred);
+        setIsModalVisible(true); // <-- Move this here
+      } else {
+        Alert.alert('Credential Error', 'Unable to load credential details.', [
+          {text: 'OK'},
+        ]);
+      }
+    } catch (error) {
+      console.error('Error handling credential press:', error);
+      Alert.alert('Error', 'Something went wrong. Please try again.', [
+        {text: 'OK'},
+      ]);
     }
   };
 
@@ -575,12 +671,58 @@ function App(): React.JSX.Element {
   const safePadding = 20;
 
   const handleInputSubmit = () => {
+    if (!inputValue.trim()) {
+      Alert.alert(
+        'Invalid Input',
+        'Please enter a credential offer URL before proceeding.',
+        [{text: 'OK'}],
+      );
+      return;
+    }
+
+    // Validate credential offer URL format
+    if (
+      !inputValue.startsWith('openid-credential-offer://') ||
+      !inputValue.includes('credential_offer_uri=')
+    ) {
+      Alert.alert(
+        'Invalid URL Format',
+        'Please enter a valid credential offer URL. It should start with "openid-credential-offer://" and contain a credential_offer_uri parameter.\n\nExample format:\nopenid-credential-offer://?credential_offer_uri=https%3A%2F%2Ftrustinc.fly.dev%2F...',
+        [{text: 'OK'}],
+      );
+      return;
+    }
+
     setLoading(true);
     setCredentialOffer(inputValue);
     setInputValue('');
   };
 
   const handleAuthInputSubmit = () => {
+    if (!authInputValue.trim()) {
+      Alert.alert(
+        'Invalid Input',
+        'Please enter a verification request URL before proceeding.',
+        [{text: 'OK'}],
+      );
+      return;
+    }
+
+    // Validate verification request URL format
+    if (
+      !authInputValue.startsWith('openid4vp://') ||
+      !authInputValue.includes('client_id=') ||
+      !authInputValue.includes('request_uri=')
+    ) {
+      Alert.alert(
+        'Invalid URL Format',
+        'Please enter a valid verification request URL. It should start with "openid4vp://" and contain both client_id and request_uri parameters.\n\nExample format:\nopenid4vp://?client_id=did%3Akey%3A...&request_uri=https%3A%2F%2Ftrustinc.fly.dev%2F...',
+        [{text: 'OK'}],
+      );
+      return;
+    }
+
+    setVerificationLoading(true);
     setAuthorizationRequest(authInputValue);
     setAuthInputValue('');
   };
@@ -642,6 +784,14 @@ function App(): React.JSX.Element {
               Accepting credential...
             </Text>
           </View>
+        ) : verificationLoading ? (
+          <View
+            style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
+            <Text
+              style={{color: THEME.primary, fontSize: 20, marginBottom: 16}}>
+              Verifying credentials...
+            </Text>
+          </View>
         ) : (
           <>
             <View style={styles.header}>
@@ -652,7 +802,7 @@ function App(): React.JSX.Element {
                     color: isDarkMode ? THEME.darkText : THEME.text,
                   },
                 ]}>
-                Digital Wallet
+                Trust Inc Digital Wallet
               </Text>
             </View>
 
@@ -776,9 +926,17 @@ function App(): React.JSX.Element {
                           multiline
                         />
                         <TouchableOpacity
-                          style={styles.primaryButton}
-                          onPress={handleInputSubmit}>
-                          <Text style={styles.buttonText}>
+                          style={[
+                            styles.primaryButton,
+                            !inputValue.trim() && styles.disabledButton,
+                          ]}
+                          onPress={handleInputSubmit}
+                          disabled={!inputValue.trim()}>
+                          <Text
+                            style={[
+                              styles.buttonText,
+                              !inputValue.trim() && styles.disabledButtonText,
+                            ]}>
                             Accept Credential
                           </Text>
                         </TouchableOpacity>
@@ -813,9 +971,20 @@ function App(): React.JSX.Element {
                           multiline
                         />
                         <TouchableOpacity
-                          style={styles.primaryButton}
-                          onPress={handleAuthInputSubmit}>
-                          <Text style={styles.buttonText}>Verify</Text>
+                          style={[
+                            styles.primaryButton,
+                            !authInputValue.trim() && styles.disabledButton,
+                          ]}
+                          onPress={handleAuthInputSubmit}
+                          disabled={!authInputValue.trim()}>
+                          <Text
+                            style={[
+                              styles.buttonText,
+                              !authInputValue.trim() &&
+                                styles.disabledButtonText,
+                            ]}>
+                            Verify
+                          </Text>
                         </TouchableOpacity>
                       </View>
                     )}
@@ -853,6 +1022,7 @@ function App(): React.JSX.Element {
                       <View style={styles.detailSection}>
                         {selectedCredential &&
                         selectedCredential.claims &&
+                        typeof selectedCredential.claims === 'object' &&
                         Object.keys(selectedCredential.claims).length > 0 ? (
                           Object.entries(selectedCredential.claims)
                             .filter(
@@ -1006,12 +1176,19 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     alignItems: 'center',
   },
+  disabledButton: {
+    backgroundColor: THEME.primary + '50',
+    opacity: 0.6,
+  },
   buttonText: {
     color: '#ffffff',
     fontWeight: '600',
     fontSize: 16,
     fontFamily: Platform.OS === 'ios' ? 'SF Pro Text' : 'sans-serif-medium',
     letterSpacing: 0.5,
+  },
+  disabledButtonText: {
+    opacity: 0.7,
   },
   credentialItem: {
     flexDirection: 'row',
@@ -1149,6 +1326,40 @@ const styles = StyleSheet.create({
     color: THEME.error,
     fontWeight: '600',
   },
+  // Error Boundary Styles
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: THEME.background,
+    padding: 20,
+  },
+  errorText: {
+    fontSize: 18,
+    color: THEME.error,
+    textAlign: 'center',
+    marginBottom: 20,
+    fontWeight: '600',
+  },
+  retryButton: {
+    backgroundColor: THEME.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
 });
 
-export default App;
+function AppWithErrorBoundary() {
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
+}
+
+export default AppWithErrorBoundary;
