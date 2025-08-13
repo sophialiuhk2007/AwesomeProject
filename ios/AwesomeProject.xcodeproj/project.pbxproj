@@ -112,6 +112,7 @@
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				00EEFC60759A1932668264C0 /* [CP] Embed Pods Frameworks */,
 				E235C05ADACE081382539298 /* [CP] Copy Pods Resources */,
+				E32C134D2E48F786009E620F /* Copy Hermes dSYM */,
 			);
 			buildRules = (
 			);
@@ -248,6 +249,30 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-AwesomeProject/Pods-AwesomeProject-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
+		E32C134D2E48F786009E620F /* Copy Hermes dSYM */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../node_modules/react-native/sdks/hermes/dSYM/hermes.framework.dSYM",
+				"$(PODS_ROOT)/hermes-engine/destroot/Library/Frameworks/universal/hermes.xcframework/ios-arm64/hermes.framework.dSYM",
+				"$(PODS_ROOT)/hermes-engine/destroot/dSYM/hermes.framework.dSYM",
+			);
+			name = "Copy Hermes dSYM";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/$(FRAMEWORKS_FOLDER_PATH)/hermes.framework.dSYM\n",
+				"$(DWARF_DSYM_FOLDER_PATH)/hermes.framework.dSYM",
+				"$(DWARF_DSYM_FOLDER_PATH)/$(DWARF_DSYM_FILE_NAME)/Contents/Resources/DWARF/hermes",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Copy Hermes dSYM for App Store submission\nif [[ \"$CONFIGURATION\" == \"Release\" ]]; then\n    # Find Hermes framework\n    HERMES_FRAMEWORK_PATH=\"${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermes.framework\"\n    \n    if [[ -d \"$HERMES_FRAMEWORK_PATH\" ]]; then\n        # Create dSYM directory if it doesn't exist\n        DSYM_DIR=\"${DWARF_DSYM_FOLDER_PATH}\"\n        mkdir -p \"$DSYM_DIR\"\n        \n        # Copy Hermes binary to dSYM\n        HERMES_DSYM_PATH=\"${DSYM_DIR}/hermes.framework.dSYM\"\n        mkdir -p \"${HERMES_DSYM_PATH}/Contents/Resources/DWARF\"\n        \n        # Copy the binary\n        cp \"${HERMES_FRAMEWORK_PATH}/hermes\" \"${HERMES_DSYM_PATH}/Contents/Resources/DWARF/hermes\"\n        \n        # Create Info.plist for dSYM\n        cat > \"${HERMES_DSYM_PATH}/Contents/Info.plist\" << EOF\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n    <key>CFBundleDevelopmentRegion</key>\n    <string>English</string>\n    <key>CFBundleIdentifier</key>\n    <string>com.apple.xcode.dsym.hermes.framework</string>\n    <key>CFBundleInfoDictionaryVersion</key>\n    <string>6.0</string>\n    <key>CFBundlePackageType</key>\n    <string>dSYM</string>\n    <key>CFBundleSignature</key>\n    <string>????</string>\n    <key>CFBundleShortVersionString</key>\n    <string>1.0</string>\n    <key>CFBundleVersion</key>\n    <string>1</string>\n</dict>\n</plist>\nEOF\n        \n        echo \"Created Hermes dSYM at: $HERMES_DSYM_PATH\"\n    else\n        echo \"Warning: Hermes framework not found at $HERMES_FRAMEWORK_PATH\"\n    fi\nfi\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -271,6 +296,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = NFLVPCB9C2;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = AwesomeProject/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Trust Inc Digital Wallet";
@@ -288,8 +314,13 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.trustinc.wallet;
 				PRODUCT_NAME = AwesomeProject;
 				PROVISIONING_PROFILE_SPECIFIER = "";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
 				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Debug;
@@ -319,7 +350,12 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.trustinc.wallet;
 				PRODUCT_NAME = AwesomeProject;
 				PROVISIONING_PROFILE_SPECIFIER = "";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
 				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Release;
